@@ -3,24 +3,34 @@
 An [MCP](https://modelcontextprotocol.io) server that exposes real astronomical calculations as
 tools for any MCP-compatible client (Claude Desktop, Claude Code, etc.).
 
-Built on the open-source [`astronomy-engine`](https://github.com/cosinekitty/astronomy) library
-(MIT) for the raw planetary positions, with a small, self-contained astrology layer on top: sign
-boundaries and major aspects (conjunction, sextile, square, trine, opposition). Standalone demo —
-not a repackaging of any production system's proprietary interpretation logic.
+Two different computation sources, on purpose:
+
+- **`get_planet_position`** runs on the open-source [`astronomy-engine`](https://github.com/cosinekitty/astronomy)
+  library (MIT), with a small, self-contained astrology layer on top (sign boundaries). A
+  standalone calculation, not a repackaging of any production system's logic.
+- **`get_natal_chart`** calls [Magical Chart](https://magicalchart.com)'s live, public, unauthenticated
+  natal-chart API — my production astrology product's real, Swiss Ephemeris-validated engine —
+  over HTTP. It exposes the engine's *results*, not its source.
 
 ## Why this exists
 
 I run [Magical Chart](https://magicalchart.com), an astrology/tarot product in production with
-real paying users, built on a proprietary astronomical engine. This repo is a small, public,
-from-scratch companion: it demonstrates the MCP protocol itself (server setup, tool schemas,
-stdio transport) against real computation, without exposing that production engine's source.
+real paying users, built on a proprietary astronomical engine. This repo demonstrates the MCP
+protocol itself (server setup, tool schemas, stdio transport) in front of real computation — one
+tool shows the protocol against a from-scratch calculation, the other shows it fronting a live
+production API, without exposing that production engine's source.
 
 ## Tools
 
 - **`get_planet_position(body, date)`** — geocentric ecliptic longitude and zodiac sign of one
-  celestial body at a given date.
-- **`get_natal_chart(birthDate)`** — placements for all 10 bodies plus major aspects between
-  them, for a given birth date.
+  celestial body at a given date. Computed locally.
+- **`get_natal_chart(birthDate, latitude?, longitude?, houseSystem?)`** — placements, houses,
+  aspects, and chart angles (Ascendant, Midheaven) for a given birth moment, fetched live from
+  `magicalchart.com/api/v1/natal`. Latitude/longitude are optional — houses and angles need a
+  real birth location to mean anything, so without them the response carries a `notice` field
+  saying they're placeholder (0,0) values. That endpoint is rate-limited server-side (60
+  requests/minute for anonymous callers); this tool surfaces a clear error if the limit is hit
+  rather than retrying silently.
 
 Both verified against a real MCP client handshake (`initialize` → `tools/list` → `tools/call`)
 before publishing — not just a syntax check.

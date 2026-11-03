@@ -77,44 +77,59 @@ server.registerTool(
   }
 );
 
+// Unlike get_planet_position above (local astronomy-engine math), this tool calls Magical
+// Chart's live, public, unauthenticated natal-chart API (magicalchart.com/for-agents) instead
+// of recomputing locally. That API is backed by the production astronomical engine (Swiss
+// Ephemeris-validated), not the open-source astronomy-engine library — it exposes the real
+// computation results over HTTP without exposing the engine's source. Houses, Ascendant and
+// Midheaven require a birth location, which this local demo doesn't otherwise need; location
+// defaults to 0,0 (equator/prime meridian) when omitted, so houses and angles are placeholder
+// in that case — pass latitude/longitude for a real chart.
+const NATAL_API_URL = 'https://www.magicalchart.com/api/v1/natal';
+
 server.registerTool(
   'get_natal_chart',
   {
     title: 'Get natal chart',
-    description: 'Computes planetary placements (sign, degree) and major aspects (conjunction, sextile, square, trine, opposition) for a given birth date, from real astronomical positions.',
+    description: "Fetches planetary placements (sign, degree, house), major aspects, house cusps and chart angles (Ascendant, Midheaven) for a given birth moment and place, from Magical Chart's live production astrology API (not a local recomputation).",
     inputSchema: {
-      birthDate: z.string().describe('Birth date in ISO format (YYYY-MM-DD, or a full ISO datetime)'),
+      birthDate: z.string().describe('Birth moment in ISO format (YYYY-MM-DD, or a full ISO datetime, UTC)'),
+      latitude: z.number().min(-90).max(90).optional().describe('Birth latitude in degrees. Omit for planet signs/degrees only — houses and angles need a real location.'),
+      longitude: z.number().min(-180).max(180).optional().describe('Birth longitude in degrees. Omit for planet signs/degrees only — houses and angles need a real location.'),
+      houseSystem: z.enum(['whole-sign', 'equal']).optional().describe('House system. Defaults to whole-sign.'),
     },
   },
-  async ({ birthDate }) => {
+  async ({ birthDate, latitude, longitude, houseSystem }) => {
     const parsed = new Date(birthDate);
     if (isNaN(parsed.getTime())) {
       return { content: [{ type: 'text', text: `Invalid birthDate: ${birthDate}` }], isError: true };
     }
-    const longitudes = {};
-    for (const [name, body] of Object.entries(BODIES)) {
-      longitudes[name] = geocentricEclipticLongitude(body, parsed);
+    const hadLocation = latitude !== undefined && longitude !== undefined;
+    const body = {
+      timestamp: parsed.toISOString(),
+      latitude: hadLocation ? latitude : 0,
+      longitude: hadLocation ? longitude : 0,
+      ...(houseSystem ? { houseSystem } : {}),
+    };
+    let res;
+    try {
+      res = await fetch(NATAL_API_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Could not reach the Magical Chart natal API: ${err.message}` }], isError: true };
     }
-    const placements = Object.entries(longitudes).map(([name, longitude]) => ({
-      body: name,
-      longitude: Math.round(longitude * 1000) / 1000,
-      ...signAndDegree(longitude),
-    }));
-    const names = Object.keys(longitudes);
-    const aspects = [];
-    for (let i = 0; i < names.length; i++) {
-      for (let j = i + 1; j < names.length; j++) {
-        const sep = angularSeparation(longitudes[names[i]], longitudes[names[j]]);
-        for (const { type, angle } of ASPECTS) {
-          const orb = Math.abs(sep - angle);
-          if (orb <= ORB) {
-            aspects.push({ between: [names[i], names[j]], type, orb: Math.round(orb * 100) / 100 });
-            break;
-          }
-        }
-      }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      return { content: [{ type: 'text', text: `Magical Chart natal API returned ${res.status}: ${detail}` }], isError: true };
     }
-    return { content: [{ type: 'text', text: JSON.stringify({ date: parsed.toISOString(), placements, aspects }, null, 2) }] };
+    const payload = await res.json();
+    if (!hadLocation) {
+      payload.notice = 'No birth location was given — latitude/longitude defaulted to 0,0, so houses, Ascendant and Midheaven in this response are placeholder values, not a real chart. Pass latitude/longitude for a real chart.';
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
   }
 );
 
