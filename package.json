@@ -1,0 +1,19 @@
+{
+  "name": "mcp-astrology-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server demo: exposes real astronomical calculations (natal chart, planet positions) as tools for any MCP client",
+  "main": "index.js",
+  "bin": {
+    "mcp-astrology-demo": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "astronomy-engine": "^2.1.19",
+    "zod": "^4.0.0"
+  }
+}
